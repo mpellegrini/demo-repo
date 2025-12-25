@@ -2,5 +2,6 @@
   "extends": "@toolchain/typescript-config/tsconfig-node22.json",
   "compilerOptions": {
     "types": ["node", "vitest/globals"]
-  }
+  },
+  "include": ["./lib/**/*.ts", "./bin/**/*.ts"]
 }
