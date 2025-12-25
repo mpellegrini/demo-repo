@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:17.5-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 10s
+      retries: 120
+    logging:
+      options:
+        max-size: 10m
+        max-file: '3'
+    ports:
+      - '5432:5432'
+    volumes:
+      - ./.docker/data/pg-data:/var/lib/postgresql/data
+      - ./.docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  dynamodb-local:
+    image: "amazon/dynamodb-local:latest"
+    restart: unless-stopped
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    working_dir: /home/dynamodblocal
+    volumes:
+      - ./.docker/data/dynamodb:/home/dynamodblocal/data
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_DATA_FILE: /data/mailpit.db
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - 8025:8025
+      - 1025:1025
+    volumes:
+      - ./.docker/data/mailpit-data:/data
+
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.11.5
+    restart: unless-stopped
+    profiles:
+      - otel-lgtm
+    ports:
+      - "16686:3000"  # Grafana UI
+      - "4317:4317"   # OpenTelemetry Collector gRPC
+      - "4318:4318"   # OpenTelemetry Collector HTTP
+      - "9090:9090"   # Prometheus
+      - "3100:3100"   # Loki
+      - "3200:3200"   # Tempo
+    volumes:
+      - ./.docker/data/grafana-data:/data
+
+  otel-jaeger:
+    image: jaegertracing/jaeger:2.8.0
+    restart: unless-stopped
+    profiles:
+      - otel-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+      - "5778:5778"
+      - "9411:9411"
+    environment:
+      - LOG_LEVEL=debug
+    volumes:
+      - ./.docker/data/jaeger/data:/jaeger
+      - ./.docker/data/jaeger/tmp:/tmp
