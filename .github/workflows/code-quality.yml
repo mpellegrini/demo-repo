@@ -9,6 +9,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+
 jobs:
   lint:
     name: ESLint
@@ -52,10 +60,44 @@ jobs:
       - name: Run unit tests
         run: pnpm run test
 
+  deploy-infrastructure:
+    name: Deploy AWS Infrastructure
+    runs-on: ubuntu-latest
+    needs: [ lint, type-check, test ]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    outputs:
+      ecr-repository: ${{ steps.deploy-cdk.outputs.ecr-repository }}
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Prepare
+        uses: ./.github/composite-actions/prepare
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/GitHubActionsDeploymentRole
+          role-session-name: ${{ github.actor }}_${{ github.job }}
+
+      - name: Deploy CDK stack
+        id: deploy-cdk
+        run: |
+          cd infrastructure/cdk-app
+          pnpm exec cdk deploy --require-approval never --outputs-file outputs.json
+
+          # Extract outputs
+          ECR_REPO=$(jq -r '.[] | .EcrRepositoryUri' outputs.json)
+
+          echo "ecr-repository=$ECR_REPO" >> $GITHUB_OUTPUT
+
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [lint, type-check, test]
+    needs: deploy-infrastructure
 
     steps:
       - name: Check out code
